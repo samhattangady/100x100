@@ -1,0 +1,19 @@
+# Creating a text dissolve effect
+We want to create a convincing text dissolve effect, where it feels like every
+pixel dissolves convincingly. To do this in a forward direction is fairly
+straightforward. Just a matter of applying noise to every pixel relative to its
+position, and thats it. The harder problem that we are trying to solve is to do
+this in reverse. Where we want to reverse the effects of that same dissolve,
+such that the text can un-dissolve into a different text. That's what is
+exciting as a prospect. So lets try it out and see what we can accomplish...
+
+Note: We want this to happen in web.
+
+So we would have to generate the textures on the fly. Which seems okay in
+general I guess. The issue is that saving it might be a bit of a bitch. Though I
+think that would just be from a code perspective. I think running it shouldn't
+be too hard really.
+
+Okay what are the things required to store in the font atlas information? That's
+what we have to figure out. For each letter, we should ideally just need the 4
+texcoords. That should be it.
