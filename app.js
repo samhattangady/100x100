@@ -3,177 +3,106 @@ const vertex_shader_source = `
 
     attribute vec2 position;
     attribute vec2 tex_coord;
-    attribute vec4 color;
 
     uniform float canvas_width;
     uniform float canvas_height;
+    uniform sampler2D tex;
 
-    varying vec4 vert_color;
     varying vec2 vert_tex_coord;
 
     void main()
     {
-        float x = position.x / canvas_width;
-        float y = position.y / canvas_height;
-        gl_Position = vec4(x, y, 0.5,  1.0);
-        vert_color = color;
+        // float x = position.x / canvas_width;
+        // float y = position.y / canvas_height;
+        gl_Position = vec4(position.xy, 1.0,  1.0);
         vert_tex_coord = tex_coord;
     }
 `;
 const fragment_shader_source = `
     precision mediump float;
 
-    varying vec4 vert_color;
     varying vec2 vert_tex_coord;
 
     uniform sampler2D tex;
 
     void main()
     {
-        vec4 alpha = texture2D(tex, vert_tex_coord.xy);
-        gl_FragColor = vec4(vert_color.rgb, alpha * vert_color.a);
+        vec4 alpha = texture2D(tex, vert_tex_coord);
+        gl_FragColor = vec4(alpha);
     } 
 `;
 
+var gl;
+var programInfo;
+var buffers;
+var texture;
+var shaderProgram;
+const buffer_data = [
+    0.5,  0.5,
+    1.0,  1.0,
+
+    -0.5,  0.5,
+    0.0,  1.0,
+
+    0.5, -0.5,
+    1.0, 0.0,
+
+    -0.5, -0.5,
+    0.0, 0.0,
+];
 main();
+window.requestAnimationFrame(draw);
+
+function draw() {
+  drawScene(gl, shaderProgram, buffers, texture);
+  window.requestAnimationFrame(draw);
+}
 
 function main() {
   const canvas = document.querySelector('#glcanvas');
-  const gl = canvas.getContext('webgl');
+  gl = canvas.getContext('webgl');
   if (!gl) {
     alert('Unable to initialize WebGL. Your browser or machine may not support it.');
     return;
   }
-  const shaderProgram = initShaderProgram(gl, vertex_shader_source, fragment_shader_source);
-  const programInfo = {
-    program: shaderProgram,
-    attribLocations: {
-      position: gl.getAttribLocation(shaderProgram, 'position'),
-      color: gl.getAttribLocation(shaderProgram, 'color'),
-      tex_coord: gl.getAttribLocation(shaderProgram, 'tex_coord'),
-    },
-    uniformLocations: {
-      canvas_width: gl.getUniformLocation(shaderProgram, 'canvas_width'),
-      canvas_height: gl.getUniformLocation(shaderProgram, 'canvas_height'),
-      tex: gl.getUniformLocation(shaderProgram, 'tex'),
-    },
-  };
-  const buffers = initBuffers(gl);
-  const texture = loadTexture(gl, 'data/jetbrains.png');
-  drawScene(gl, programInfo, buffers, texture);
+  shaderProgram = initShaderProgram(gl, vertex_shader_source, fragment_shader_source);
+  buffers = initBuffers(gl, shaderProgram);
+  texture = loadTexture(gl, 'data/jetbrains.png');
 }
 
-function initBuffers(gl) {
-  const positions = [
-     1.0,  1.0,
-    -1.0,  1.0,
-     1.0, -1.0,
-    -1.0, -1.0,
-  ];
-  const positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-  // colors
-  const colors = [
-    1.0,  1.0,  1.0,  1.0,    // white
-    1.0,  0.0,  0.0,  1.0,    // red
-    0.0,  1.0,  0.0,  1.0,    // green
-    0.0,  0.0,  1.0,  1.0,    // blue
-  ];
-  const colorBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
-  // textures
-  const tex_coords = [
-     1.0,  1.0,
-    -1.0,  1.0,
-     1.0, -1.0,
-    -1.0, -1.0,
-  ];
-  const tex_coord_buffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, tex_coord_buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tex_coords), gl.STATIC_DRAW);
-  return {
-    position: positionBuffer,
-    color: colorBuffer,
-    tex_coord: tex_coord_buffer,
-  };
+function initBuffers(gl, shaderProgram) {
+  const vertex_buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
+  const position_location = gl.getAttribLocation(shaderProgram, 'position');
+  gl.vertexAttribPointer(position_location, 2, gl.FLOAT, false, 4*4, 0);
+  gl.enableVertexAttribArray(position_location);
+  const tex_coord_location = gl.getAttribLocation(shaderProgram, 'tex_coord');
+  gl.vertexAttribPointer(tex_coord_location, 2, gl.FLOAT, false, 4*4, 2*4);
+  gl.enableVertexAttribArray(tex_coord_location);
+  return { vertex: vertex_buffer };
 }
 
-function drawScene(gl, programInfo, buffers, texture) {
-  gl.clearColor(0.0, 1.0, 0.0, 1.0);
-  gl.clearDepth(1.0);
-  gl.enable(gl.DEPTH_TEST);
-  gl.depthFunc(gl.LEQUAL);
+function drawScene(gl, shaderProgram, buffers, texture) {
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.BLEND);
+  // gl.clearDepth(1.0);
+  // gl.enable(gl.DEPTH_TEST);
+  // gl.depthFunc(gl.LEQUAL);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  // Tell WebGL how to pull out the positions from the position
-  // buffer into the vertexPosition attribute
-  {
-    const numComponents = 2;
-    const type = gl.FLOAT;
-    const normalize = false;
-    const stride = 0;
-    const offset = 0;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-    gl.vertexAttribPointer(
-        programInfo.attribLocations.position,
-        numComponents,
-        type,
-        normalize,
-        stride,
-        offset);
-    gl.enableVertexAttribArray(
-        programInfo.attribLocations.position);
-  }
-  // Tell WebGL how to pull out the colors from the color buffer
-  // into the vertexColor attribute.
-  {
-    const numComponents = 4;
-    const type = gl.FLOAT;
-    const normalize = false;
-    const stride = 0;
-    const offset = 0;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-    gl.vertexAttribPointer(
-        programInfo.attribLocations.color,
-        numComponents,
-        type,
-        normalize,
-        stride,
-        offset);
-    gl.enableVertexAttribArray(
-        programInfo.attribLocations.color);
-  }
-  {
-    const numComponents = 2;
-    const type = gl.FLOAT;
-    const normalize = false;
-    const stride = 0;
-    const offset = 0;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tex_coord);
-    gl.vertexAttribPointer(
-        programInfo.attribLocations.tex_coord,
-        numComponents,
-        type,
-        normalize,
-        stride,
-        offset);
-    gl.enableVertexAttribArray(
-        programInfo.attribLocations.tex_coord);
-  }
   // Tell WebGL to use our program when drawing
-  gl.useProgram(programInfo.program);
-  // Set the shader uniforms
-  gl.uniform1f(programInfo.uniformLocations.canvas_width, 500);
-  gl.uniform1f(programInfo.uniformLocations.canvas_height, 500);
+  // gl.viewport(0, 0, 500, 500);
+  gl.useProgram(shaderProgram);
+  gl.program = shaderProgram;
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.uniform1i(programInfo.uniformLocations.uSampler, 0);
-  {
-    const offset = 0;
-    const vertexCount = 4;
-    gl.drawArrays(gl.TRIANGLE_STRIP, offset, vertexCount);
-  }
+  // Set the shader uniforms
+  // gl.uniform1f(programInfo.uniformLocations.canvas_width, 500);
+  // gl.uniform1f(programInfo.uniformLocations.canvas_height, 500);
+  gl.uniform1i(gl.getUniformLocation(shaderProgram, 'tex'), 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
 function initShaderProgram(gl, vsSource, fsSource) {
