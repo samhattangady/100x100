@@ -108,39 +108,42 @@ function init_flow_texture() {
                     border, format, type, null);
       // set the filtering so we don't need mips
       // TODO (28 Apr 2022 sam): See what these should be...
-      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_BASE_LEVEL, 0);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAX_LEVEL, 32);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     }
     // Create and bind the framebuffer
     flow_frame_buffer = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
     // attach the texture as the first color attachment
-    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, flow_texture, 0, 0);
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, flow_texture, 0, 0);
 }
 
 
 function drawScene() {
-//     {
-//     gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
-//   gl.clearColor(1.0, 0.0, 0.0, 1.0);
-//   gl.enable(gl.BLEND);
-//   // gl.clearDepth(1.0);
-//   // gl.enable(gl.DEPTH_TEST);
-//   // gl.depthFunc(gl.LEQUAL);
-//   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-//   // Tell WebGL to use our program when drawing
-//   // gl.viewport(0, 0, 500, 500);
-//   gl.useProgram(shaderProgram);
-//   gl.program = shaderProgram;
-//   gl.activeTexture(gl.TEXTURE0);
-//   gl.bindTexture(gl.TEXTURE_2D, font_texture);
-//   // Set the shader uniforms
-//   gl.uniform1i(gl.getUniformLocation(shaderProgram, 'tex'), 0);
-//   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-//   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
-//   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-//     }
+     {
+//      gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
+//    gl.clearColor(1.0, 0.0, 0.0, 1.0);
+//    gl.enable(gl.BLEND);
+//    // gl.clearDepth(1.0);
+//    // gl.enable(gl.DEPTH_TEST);
+//    // gl.depthFunc(gl.LEQUAL);
+//    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+//    // Tell WebGL to use our program when drawing
+//    // gl.viewport(0, 0, 500, 500);
+//    gl.useProgram(flow_shader_program);
+//    gl.program = flow_shader_program;
+//    gl.activeTexture(gl.TEXTURE0);
+//    gl.bindTexture(gl.TEXTURE_2D, font_texture);
+//    // Set the shader uniforms
+//    gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex'), 0);
+//    gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), 0);
+//    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+//    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
+//    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+     }
     {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.clearColor(0.0, 0.0, 1.0, 1.0);
@@ -199,8 +202,8 @@ function generate_flow_data() {
       {
         // draw to flow frame buffer
         gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
-        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, flow_texture, 0, i);
-        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, flow_texture, 0, i);
+        gl.clearColor(0.0, 1.0, 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.useProgram(flow_shader_program);
         gl.program = flow_shader_program;
@@ -210,7 +213,7 @@ function generate_flow_data() {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_3D, null);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
-        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*0.0) / 32.0);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*1.0) / 32.0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
       {
@@ -226,7 +229,7 @@ function generate_flow_data() {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_3D, flow_texture);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
-        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*-0.0) / 32.0);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*-1.0) / 32.0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
     }
