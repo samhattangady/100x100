@@ -1,76 +1,52 @@
-const vertex_shader_source = `
-    precision mediump float;
-
-    attribute vec2 position;
-    attribute vec2 tex_coord;
-
-    uniform float canvas_width;
-    uniform float canvas_height;
-    uniform sampler2D tex;
-
-    varying vec2 vert_tex_coord;
-
-    void main()
-    {
-        // float x = position.x / canvas_width;
-        // float y = position.y / canvas_height;
-        gl_Position = vec4(position.xy, 1.0,  1.0);
-        vert_tex_coord = tex_coord;
-    }
-`;
-const fragment_shader_source = `
-    precision mediump float;
-
-    varying vec2 vert_tex_coord;
-
-    uniform sampler2D tex;
-
-    void main()
-    {
-        vec4 alpha = texture2D(tex, vert_tex_coord);
-        gl_FragColor = vec4(alpha);
-    } 
-`;
-
 var gl;
-var programInfo;
-var buffers;
-var texture;
+var buffer;
+var font_texture;
+var render_texture;
+var render_frame_buffer;
+var flow_texture;
+var flow_frame_buffer;
 var shaderProgram;
+var flow_shader_program;
+
 const buffer_data = [
-    0.5,  0.5,
+    1.0,  1.0,
     1.0,  1.0,
 
-    -0.5,  0.5,
+    -1.0,  1.0,
     0.0,  1.0,
 
-    0.5, -0.5,
+    1.0, -1.0,
     1.0, 0.0,
 
-    -0.5, -0.5,
+    -1.0, -1.0,
     0.0, 0.0,
 ];
 main();
 window.requestAnimationFrame(draw);
 
 function draw() {
-  drawScene(gl, shaderProgram, buffers, texture);
+  generate_flow_data();
+  drawScene();
   window.requestAnimationFrame(draw);
 }
 
 function main() {
   const canvas = document.querySelector('#glcanvas');
-  gl = canvas.getContext('webgl');
+  gl = canvas.getContext('webgl2');
   if (!gl) {
-    alert('Unable to initialize WebGL. Your browser or machine may not support it.');
+    console.log('Unable to initialize WebGL. Your browser or machine may not support it.');
     return;
   }
   shaderProgram = initShaderProgram(gl, vertex_shader_source, fragment_shader_source);
-  buffers = initBuffers(gl, shaderProgram);
-  texture = loadTexture(gl, 'data/jetbrains.png');
+  buffer = initBuffer();
+  init_render_texture();
+  init_flow_texture();
+  init_flow_shader_program();
+  generate_flow_data();
+  font_texture = loadTexture('data/jetbrains.png');
 }
 
-function initBuffers(gl, shaderProgram) {
+function initBuffer() {
   const vertex_buffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
@@ -80,11 +56,94 @@ function initBuffers(gl, shaderProgram) {
   const tex_coord_location = gl.getAttribLocation(shaderProgram, 'tex_coord');
   gl.vertexAttribPointer(tex_coord_location, 2, gl.FLOAT, false, 4*4, 2*4);
   gl.enableVertexAttribArray(tex_coord_location);
-  return { vertex: vertex_buffer };
+  return vertex_buffer;
 }
 
-function drawScene(gl, shaderProgram, buffers, texture) {
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+function init_render_texture() {
+    // create to render to
+    const targetTextureWidth = 500;
+    const targetTextureHeight = 500;
+    render_texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, render_texture);
+    {
+      // define size and format of level 0
+      const level = 0;
+      const internalFormat = gl.RGBA;
+      const border = 0;
+      const format = gl.RGBA;
+      const type = gl.UNSIGNED_BYTE;
+      const data = null;
+      gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                    targetTextureWidth, targetTextureHeight, border,
+                    format, type, data);
+      // set the filtering so we don't need mips
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    // Create and bind the framebuffer
+    render_frame_buffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
+    // attach the texture as the first color attachment
+    gl.framebufferTexture2D(
+        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, render_texture, 0);
+}
+
+function init_flow_texture() {
+    // create to render to
+    const targetTextureWidth = 500;
+    const targetTextureHeight = 500;
+    const targetTextureDepth = 32;
+    flow_texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, flow_texture);
+    {
+      // define size and format of level 0
+      const level = 0;
+      const internalFormat = gl.RGBA;
+      const border = 0;
+      const format = gl.RGBA;
+      const type = gl.UNSIGNED_BYTE;
+      gl.texImage3D(gl.TEXTURE_3D, level, internalFormat,
+                    targetTextureWidth, targetTextureHeight, targetTextureDepth,
+                    border, format, type, null);
+      // set the filtering so we don't need mips
+      // TODO (28 Apr 2022 sam): See what these should be...
+      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    // Create and bind the framebuffer
+    flow_frame_buffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
+    // attach the texture as the first color attachment
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, flow_texture, 0, 0);
+}
+
+
+function drawScene() {
+//     {
+//     gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
+//   gl.clearColor(1.0, 0.0, 0.0, 1.0);
+//   gl.enable(gl.BLEND);
+//   // gl.clearDepth(1.0);
+//   // gl.enable(gl.DEPTH_TEST);
+//   // gl.depthFunc(gl.LEQUAL);
+//   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+//   // Tell WebGL to use our program when drawing
+//   // gl.viewport(0, 0, 500, 500);
+//   gl.useProgram(shaderProgram);
+//   gl.program = shaderProgram;
+//   gl.activeTexture(gl.TEXTURE0);
+//   gl.bindTexture(gl.TEXTURE_2D, font_texture);
+//   // Set the shader uniforms
+//   gl.uniform1i(gl.getUniformLocation(shaderProgram, 'tex'), 0);
+//   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+//   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
+//   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+//     }
+    {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.clearColor(0.0, 0.0, 1.0, 1.0);
   gl.enable(gl.BLEND);
   // gl.clearDepth(1.0);
   // gl.enable(gl.DEPTH_TEST);
@@ -95,14 +154,13 @@ function drawScene(gl, shaderProgram, buffers, texture) {
   gl.useProgram(shaderProgram);
   gl.program = shaderProgram;
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.bindTexture(gl.TEXTURE_2D, render_texture);
   // Set the shader uniforms
-  // gl.uniform1f(programInfo.uniformLocations.canvas_width, 500);
-  // gl.uniform1f(programInfo.uniformLocations.canvas_height, 500);
   gl.uniform1i(gl.getUniformLocation(shaderProgram, 'tex'), 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
 }
 
 function initShaderProgram(gl, vsSource, fsSource) {
@@ -119,6 +177,61 @@ function initShaderProgram(gl, vsSource, fsSource) {
   return shaderProgram;
 }
 
+function init_flow_shader_program() {
+  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vertex_shader_source);
+  const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, flow_fragment_shader_source);
+  flow_shader_program = gl.createProgram();
+  gl.attachShader(flow_shader_program, vertexShader);
+  gl.attachShader(flow_shader_program, fragmentShader);
+  gl.linkProgram(flow_shader_program);
+  if (!gl.getProgramParameter(flow_shader_program, gl.LINK_STATUS)) {
+    alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(flow_shader_program));
+    return null;
+  }
+}
+
+function generate_flow_data() {
+    // we draw onto the flow_frame_buffer and then copy that texture into the
+    // render_texture
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
+    for (let i=0; i < 32; i++) {
+      {
+        // draw to flow frame buffer
+        gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
+        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, flow_texture, 0, i);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(flow_shader_program);
+        gl.program = flow_shader_program;
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, render_texture);
+        gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex'), 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_3D, null);
+        gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*0.0) / 32.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      {
+        // copy onto render texture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
+        gl.clearColor(1.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(flow_shader_program);
+        gl.program = flow_shader_program;
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex'), 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_3D, flow_texture);
+        gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*-0.0) / 32.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+    }
+}
+
 function loadShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -131,7 +244,7 @@ function loadShader(gl, type, source) {
   return shader;
 }
 
-function loadTexture(gl, url) {
+function loadTexture(url) {
   const texture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, texture);
   // Because images have to be download over the internet
@@ -178,5 +291,3 @@ function loadTexture(gl, url) {
 function isPowerOf2(value) {
   return (value & (value - 1)) == 0;
 }
-
-
