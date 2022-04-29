@@ -7,6 +7,7 @@ var flow_texture;
 var flow_frame_buffer;
 var shaderProgram;
 var flow_shader_program;
+var num_layers = 32;
 
 const buffer_data = [
     1.0,  1.0,
@@ -92,10 +93,9 @@ function init_render_texture() {
 function init_flow_texture() {
     // create to render to
     const targetTextureWidth = 500;
-    const targetTextureHeight = 500;
-    const targetTextureDepth = 32;
+    const targetTextureHeight = 500 * num_layers;
     flow_texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D, flow_texture);
+    gl.bindTexture(gl.TEXTURE_2D, flow_texture);
     {
       // define size and format of level 0
       const level = 0;
@@ -103,22 +103,18 @@ function init_flow_texture() {
       const border = 0;
       const format = gl.RGBA;
       const type = gl.UNSIGNED_BYTE;
-      gl.texImage3D(gl.TEXTURE_3D, level, internalFormat,
-                    targetTextureWidth, targetTextureHeight, targetTextureDepth,
+      gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                    targetTextureWidth, targetTextureHeight,
                     border, format, type, null);
-      // set the filtering so we don't need mips
-      // TODO (28 Apr 2022 sam): See what these should be...
-      // gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_BASE_LEVEL, 0);
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAX_LEVEL, 32);
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     }
     // Create and bind the framebuffer
     flow_frame_buffer = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
     // attach the texture as the first color attachment
-    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, flow_texture, 0, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, flow_texture, 0);
 }
 
 
@@ -181,7 +177,7 @@ function initShaderProgram(gl, vsSource, fsSource) {
 }
 
 function init_flow_shader_program() {
-  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vertex_shader_source);
+  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, flow_vertex_shader_source);
   const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, flow_fragment_shader_source);
   flow_shader_program = gl.createProgram();
   gl.attachShader(flow_shader_program, vertexShader);
@@ -198,27 +194,30 @@ function generate_flow_data() {
     // render_texture
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffer_data), gl.STATIC_DRAW);
-    for (let i=0; i < 32; i++) {
+    for (let i=0; i < num_layers; i++) {
       {
         // draw to flow frame buffer
         gl.bindFramebuffer(gl.FRAMEBUFFER, flow_frame_buffer);
-        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, flow_texture, 0, i);
-        gl.clearColor(0.0, 1.0, 0.0, 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        if (i==0) {
+            gl.clearColor(0.0, 1.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        gl.viewport(0, i*500, 500, 500);
         gl.useProgram(flow_shader_program);
         gl.program = flow_shader_program;
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, render_texture);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex'), 0);
         gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_3D, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
-        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*1.0) / 32.0);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'layer'), i*1.0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
       {
         // copy onto render texture
         gl.bindFramebuffer(gl.FRAMEBUFFER, render_frame_buffer);
+        gl.viewport(0, 0, 500, 500);
         gl.clearColor(1.0, 0.0, 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.useProgram(flow_shader_program);
@@ -227,9 +226,9 @@ function generate_flow_data() {
         gl.bindTexture(gl.TEXTURE_2D, null);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex'), 0);
         gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_3D, flow_texture);
+        gl.bindTexture(gl.TEXTURE_2D, flow_texture);
         gl.uniform1i(gl.getUniformLocation(flow_shader_program, 'tex2'), 1);
-        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'time'), (i*-1.0) / 32.0);
+        gl.uniform1f(gl.getUniformLocation(flow_shader_program, 'layer'), -(i+1) * 1.0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
     }
